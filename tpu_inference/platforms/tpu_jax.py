@@ -90,7 +90,7 @@ class TpuPlatform(Platform):
 
     @classmethod
     def is_async_output_supported(cls, enforce_eager: Optional[bool]) -> bool:
-        return not envs.VLLM_USE_V1
+        return False
 
     @classmethod
     def get_punica_wrapper(cls) -> str:
@@ -114,9 +114,6 @@ class TpuPlatform(Platform):
 
     @classmethod
     def check_and_update_config(cls, vllm_config: VllmConfig) -> None:
-        if not envs.VLLM_USE_V1:
-            raise RuntimeError("VLLM_USE_V1=1 must be set for JAX backend.")
-
         if envs.VLLM_TPU_USING_PATHWAYS:
             assert not envs.VLLM_ENABLE_V1_MULTIPROCESSING, (
                 "VLLM_ENABLE_V1_MULTIPROCESSING must be 0 when using Pathways(JAX_PLATFORMS=proxy)"
@@ -158,23 +155,6 @@ class TpuPlatform(Platform):
         if impl == "vllm":
             vllm_config.model_config.dtype = j2t_dtype(
                 vllm_config.model_config.dtype.dtype)
-
-        if envs.VLLM_USE_V1:
-            # TODO(cuiq): remove this dependency.
-            from vllm.v1.attention.backends.pallas import \
-                PallasAttentionBackend
-            cache_config.block_size = PallasAttentionBackend.get_page_size(
-                vllm_config)  # type: ignore[assignment]
-            min_page_size = PallasAttentionBackend.get_min_page_size(
-                vllm_config)
-            if min_page_size > cache_config.block_size:
-                logger.warning(
-                    "Increase the page size from %s to %s to make sure there's"
-                    "no SMEM OOM",
-                    cache_config.block_size,
-                    min_page_size,
-                )
-                cache_config.block_size = min_page_size  # type: ignore[assignment]
 
         parallel_config = vllm_config.parallel_config
         scheduler_config = vllm_config.scheduler_config
@@ -238,9 +218,6 @@ class TpuPlatform(Platform):
         """Raises if this request is unsupported on this platform"""
 
         if isinstance(params, SamplingParams):
-            if params.structured_outputs is not None and not envs.VLLM_USE_V1:
-                raise ValueError("Structured output is not supported on "
-                                 f"{cls.device_name} V0.")
             if params.sampling_type == SamplingType.RANDOM_SEED:
                 raise ValueError("JAX does not support per-request seed.")
 
